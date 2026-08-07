@@ -35,6 +35,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--solve-captcha", action="store_true",
                    help="如果检测到验证码，立即弹窗人工解决（默认只告知不弹窗）")
 
+    p = sub.add_parser("script", help="Manage command-sequence scripts")
+    ssub = p.add_subparsers(dest="script_cmd", required=True)
+    ssub.add_parser("list", help="List scripts")
+    ssub.add_parser("show", help="Show a script").add_argument("name")
+    psave = ssub.add_parser("save", help="Save a script")
+    psave.add_argument("name")
+    psave.add_argument("--steps", required=True, help="JSON array of steps")
+    ssub.add_parser("delete", help="Delete a script").add_argument("name")
+
     args = parser.parse_args(argv)
 
     if args.command == "version":
@@ -70,6 +79,28 @@ def main(argv: list[str] | None = None) -> int:
         if result.get("screenshot"):
             print(f"SCREENSHOT: {result['screenshot']}")
         return 0
+
+    if args.command == "script":
+        import json
+        from omnigate.script_store import ScriptStore
+        store = ScriptStore()
+        if args.script_cmd == "list":
+            for name in store.list_names():
+                print(name)
+            return 0
+        if args.script_cmd == "show":
+            print(json.dumps(store.load(args.name), ensure_ascii=False, indent=2))
+            return 0
+        if args.script_cmd == "save":
+            import json
+            steps = json.loads(args.steps)
+            store.save(args.name, steps)
+            print(f"saved: {args.name}")
+            return 0
+        if args.script_cmd == "delete":
+            store.delete(args.name)
+            print(f"deleted: {args.name}")
+            return 0
 
     return 0
 
