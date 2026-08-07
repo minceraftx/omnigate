@@ -27,15 +27,20 @@ def _page_loaded(b) -> bool:
 
 
 def _page_html(b) -> str:
-    """Return the page's outerHTML, or '' on any error."""
+    """Return the page's outerHTML, or None on any error.
+
+    None (not '') lets callers distinguish "page couldn't be read" from
+    "page genuinely has no captcha" — a blank read must not be treated as
+    "captcha solved".
+    """
     try:
         resp = b._require_session().send(
             "Runtime.evaluate",
             {"expression": "document.documentElement.outerHTML", "returnByValue": True},
         )
-        return resp["result"]["result"].get("value", "")
+        return resp["result"]["result"].get("value", None)
     except Exception:
-        return ""
+        return None
 
 
 def _launch_and_navigate(edge: str, url: str, user_data_dir: str, port: int,
@@ -81,8 +86,9 @@ def _solve_captcha_popup(b, edge: str, url: str, user_data_dir: str,
     b.start()
     try:
         b.inject_login()
-    except RuntimeError:
-        # No debug-port Edge — pop the window logged-out rather than fail.
+    except Exception:
+        # No debug-port Edge or inject hiccup — pop the window logged-out
+        # rather than fail the whole flow.
         pass
     b.navigate(url)
     print("[CAPTCHA] CAPTCHA_WINDOW_OPENED - 请人工解决")
@@ -90,10 +96,14 @@ def _solve_captcha_popup(b, edge: str, url: str, user_data_dir: str,
     deadline = _time.time() + timeout
     while _time.time() < deadline:
         _time.sleep(3)
-        if not detect_captcha_features(_page_html(b)):
+        html = _page_html(b)
+        if html is None:
+            # Page unreadable right now — keep waiting, do NOT treat as solved.
+            continue
+        if not detect_captcha_features(html):
             print("[CAPTCHA] CAPTCHA_RESOLVED - 继续")
             return
-    print("[CAPTCHA] CAPTCHA_TIMEOUT - 3分钟未解决")
+    print(f"[CAPTCHA] CAPTCHA_TIMEOUT - {int(timeout)}秒未解决")
 
 
 def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
@@ -129,7 +139,7 @@ def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
         # the stdout protocol; only pop a window when solve_captcha is set.
         from omnigate.browser.captcha import detect_captcha_features, captcha_event
         html = _page_html(b)
-        features = detect_captcha_features(html)
+        features = detect_captcha_features(html) if html is not None else []
         if features:
             print(captcha_event(features, url))
             if solve_captcha:
