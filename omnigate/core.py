@@ -27,6 +27,18 @@ def _page_loaded(b) -> bool:
         return False
 
 
+def _page_html(b) -> str:
+    """Return the page's outerHTML, or '' on any error."""
+    try:
+        resp = b._require_session().send(
+            "Runtime.evaluate",
+            {"expression": "document.documentElement.outerHTML", "returnByValue": True},
+        )
+        return resp["result"]["result"].get("value", "")
+    except Exception:
+        return ""
+
+
 def _launch_and_navigate(edge: str, url: str, user_data_dir: str, port: int,
                          headless: bool, use_login: bool):
     """Start a BrowserSession, inject login, navigate. Returns the session.
@@ -54,9 +66,33 @@ def _launch_and_navigate(edge: str, url: str, user_data_dir: str, port: int,
         raise
 
 
+def _solve_captcha_popup(b, edge: str, url: str, user_data_dir: str,
+                         use_login: bool, features: list[str]) -> None:
+    """Relaunch headed, re-inject login, navigate back, and poll until the
+    captcha is gone (3 min timeout). Prints protocol lines to stdout."""
+    import time as _time
+    from omnigate.browser.captcha import detect_captcha_features
+
+    print("[CAPTCHA] 检测到验证码，正在弹出窗口请人工解决...")
+    b.stop()
+    b.headless = False
+    b.start()
+    b.inject_login()
+    b.navigate(url)
+    print("[CAPTCHA] CAPTCHA_WINDOW_OPENED - 请人工解决")
+
+    deadline = _time.time() + 180
+    while _time.time() < deadline:
+        _time.sleep(3)
+        if not detect_captcha_features(_page_html(b)):
+            print("[CAPTCHA] CAPTCHA_RESOLVED - 继续")
+            return
+    print("[CAPTCHA] CAPTCHA_TIMEOUT - 3分钟未解决")
+
+
 def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
               get_text: bool = False, scroll_count: int = 0,
-              use_login: bool = True) -> dict:
+              use_login: bool = True, solve_captcha: bool = False) -> dict:
     """Open a URL in a headless Edge, carrying login cookies from the real Edge.
 
     Returns dict with title, text (optional), screenshot path (optional).
@@ -82,6 +118,17 @@ def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
                                      headless=False, use_login=use_login)
 
         result: dict = {"url": url, "title": b.title()}
+
+        # Captcha detection — non-blocking by default. Inform the model via
+        # the stdout protocol; only pop a window when solve_captcha is set.
+        from omnigate.browser.captcha import detect_captcha_features, captcha_event
+        html = _page_html(b)
+        features = detect_captcha_features(html)
+        if features:
+            print(captcha_event(features, url))
+            if solve_captcha:
+                _solve_captcha_popup(b, edge, url, user_data_dir, use_login, features)
+
         if scroll_count > 0:
             for _ in range(scroll_count):
                 b.scroll("down")

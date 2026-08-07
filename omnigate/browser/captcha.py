@@ -31,5 +31,8 @@ def detect_captcha_features(html_or_text: str) -> list[str]:
 
 
 def captcha_event(features: list[str], url: str) -> str:
-    """Format the stdout protocol line for a detected captcha."""
-    return f"⚠ CAPTCHA: {', '.join(features)} url: {url}"
+    """Format the stdout protocol line for a detected captcha.
+
+    Uses ASCII markers only — the Windows GBK terminal cannot print '⚠'.
+    """
+    return f"[CAPTCHA] {', '.join(features)} url: {url}"

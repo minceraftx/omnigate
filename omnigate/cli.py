@@ -32,6 +32,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--scroll", type=int, default=0, help="Scroll N times after load")
     p.add_argument("--no-login", action="store_true",
                    help="Skip login-state injection (open logged-out)")
+    p.add_argument("--solve-captcha", action="store_true",
+                   help="如果检测到验证码，立即弹窗人工解决（默认只告知不弹窗）")
 
     args = parser.parse_args(argv)
 
@@ -60,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
             args.url, headless=args.headless,
             screenshot=args.screenshot, get_text=args.text,
             scroll_count=args.scroll, use_login=not args.no_login,
+            solve_captcha=args.solve_captcha,
         )
         print(f"TITLE: {result['title']}")
         if result.get("text"):
