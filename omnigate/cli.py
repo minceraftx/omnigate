@@ -15,6 +15,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("version", help="Show version")
+    sub.add_parser("doctor", help="Check environment: Edge, login-state source")
 
     p = sub.add_parser("extract-audio", help="Extract audio from a video URL and transcribe")
     p.add_argument("url", help="Video URL (bilibili/youtube/douyin...)")
@@ -37,6 +38,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "version":
         from omnigate import __version__
         print(__version__)
+        return 0
+
+    if args.command == "doctor":
+        from omnigate.doctor import diagnose, report
+        print(report(diagnose()))
         return 0
 
     if args.command == "extract-audio":
