@@ -23,25 +23,30 @@ class BrowserSession:
     def start(self) -> None:
         from omnigate.browser.edge import launch_edge
         self._proc = launch_edge(self.edge_path, self.port, self.user_data_dir, self.headless)
-        # Wait for CDP endpoint
-        deadline = time.time() + 30
-        version = None
-        while time.time() < deadline:
-            try:
-                version = http_get_json(f"http://127.0.0.1:{self.port}/json/version")
-                break
-            except Exception:
-                time.sleep(0.5)
-        if version is None:
-            raise RuntimeError("Edge did not start CDP endpoint in 30s")
-        # Open a fresh tab
-        tab = http_get_json(
-            f"http://127.0.0.1:{self.port}/json/new?about:blank",
-            method="PUT",
-        )
-        self._tab = tab
-        self._session = CdpSession(tab["webSocketDebuggerUrl"])
-        self._session.connect()
+        try:
+            # Wait for CDP endpoint
+            deadline = time.time() + 30
+            version = None
+            while time.time() < deadline:
+                try:
+                    version = http_get_json(f"http://127.0.0.1:{self.port}/json/version")
+                    break
+                except Exception:
+                    time.sleep(0.5)
+            if version is None:
+                raise RuntimeError("Edge did not start CDP endpoint in 30s")
+            # Open a fresh tab
+            tab = http_get_json(
+                f"http://127.0.0.1:{self.port}/json/new?about:blank",
+                method="PUT",
+            )
+            self._tab = tab
+            self._session = CdpSession(tab["webSocketDebuggerUrl"])
+            self._session.connect()
+        except Exception:
+            # Do not leak the Edge process if startup fails mid-way
+            self.stop()
+            raise
 
     def stop(self) -> None:
         if self._session is not None:
