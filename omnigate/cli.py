@@ -22,6 +22,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-transcribe", action="store_true",
                    help="Skip transcription (only extract audio)")
 
+    p = sub.add_parser("open", help="Open a URL in headless Edge, return content")
+    p.add_argument("url", help="URL to open")
+    p.add_argument("--headed", dest="headless", action="store_false", default=True,
+                   help="Show a browser window instead of headless")
+    p.add_argument("--screenshot", default=None, help="Save screenshot to path")
+    p.add_argument("--text", action="store_true", help="Also extract page text")
+    p.add_argument("--scroll", type=int, default=0, help="Scroll N times after load")
+    p.add_argument("--no-login", action="store_true",
+                   help="Skip login-state injection (open logged-out)")
+
     args = parser.parse_args(argv)
 
     if args.command == "version":
@@ -36,6 +46,20 @@ def main(argv: list[str] | None = None) -> int:
         if not args.no_transcribe:
             text = transcribe_wav(path)
             print(f"TEXT: {text}")
+        return 0
+
+    if args.command == "open":
+        from omnigate.core import open_page
+        result = open_page(
+            args.url, headless=args.headless,
+            screenshot=args.screenshot, get_text=args.text,
+            scroll_count=args.scroll, use_login=not args.no_login,
+        )
+        print(f"TITLE: {result['title']}")
+        if result.get("text"):
+            print(f"TEXT:\n{result['text']}")
+        if result.get("screenshot"):
+            print(f"SCREENSHOT: {result['screenshot']}")
         return 0
 
     return 0
