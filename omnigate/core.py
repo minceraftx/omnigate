@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
-
 from omnigate.browser.cdp import free_port
 from omnigate.browser.edge import find_edge
 
@@ -69,19 +68,26 @@ def _launch_and_navigate(edge: str, url: str, user_data_dir: str, port: int,
 def _solve_captcha_popup(b, edge: str, url: str, user_data_dir: str,
                          use_login: bool, features: list[str]) -> None:
     """Relaunch headed, re-inject login, navigate back, and poll until the
-    captcha is gone (3 min timeout). Prints protocol lines to stdout."""
+    captcha is gone (default 3 min, override with OMNIGATE_CAPTCHA_TIMEOUT).
+    Prints protocol lines to stdout."""
     import time as _time
     from omnigate.browser.captcha import detect_captcha_features
+
+    timeout = float(os.environ.get("OMNIGATE_CAPTCHA_TIMEOUT", "180"))
 
     print("[CAPTCHA] 检测到验证码，正在弹出窗口请人工解决...")
     b.stop()
     b.headless = False
     b.start()
-    b.inject_login()
+    try:
+        b.inject_login()
+    except RuntimeError:
+        # No debug-port Edge — pop the window logged-out rather than fail.
+        pass
     b.navigate(url)
     print("[CAPTCHA] CAPTCHA_WINDOW_OPENED - 请人工解决")
 
-    deadline = _time.time() + 180
+    deadline = _time.time() + timeout
     while _time.time() < deadline:
         _time.sleep(3)
         if not detect_captcha_features(_page_html(b)):
