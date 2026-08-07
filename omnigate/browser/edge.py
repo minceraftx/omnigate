@@ -16,11 +16,23 @@ _EDGE_PATHS = [
     os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe"),
 ]
 
-# Lock/transient files in a profile that must not be copied (Chrome-family).
+# Lock/transient files that must never be copied (Chrome-family).
+# Matched by basename — copy_tree's ignore callback only receives each
+# directory's file names, not full paths.
 _TRANSIENT = {
     "SingletonLock", "SingletonSocket", "SingletonCookie",
     "lockfile", "DevToolsActivePort",
-    "Default/Cookies-journal", "Default/Web Data-journal",
+    "Cookies-journal", "Web Data-journal",
+    "Network Persistent State-journal",
+}
+
+# Files that are safe to skip if locked (transient/cache), but whose absence
+# does not break login state. Copied best-effort.
+_SKIP_IF_LOCKED = {
+    "Cache", "Code Cache", "GPUCache", "DawnGraphiteCache",
+    "DawnWebGPUCache", "ShaderCache", "GrShaderCache",
+    "Crashpad", "Crash Reports", "OptimizationHints",
+    "Service Worker", "Application Cache", "shared_proto_db",
 }
 
 
@@ -41,7 +53,10 @@ def copy_profile(src_user_data: str, dst_user_data: str) -> str:
     """Copy Edge user-data content into dst_user_data (dst becomes user-data-dir).
 
     Copied content lands at dst root, so `dst/Default`, `dst/Local State` exist.
-    Returns dst_user_data. Raises RuntimeError on failure (e.g. file locks).
+    Files locked by a running Edge (Cookies, Local Storage, Sessions) are
+    skipped individually rather than failing the whole copy; cache dirs are
+    skipped wholesale. Returns dst_user_data. Raises RuntimeError only if the
+    top-level structure cannot be created.
     """
     dst = Path(dst_user_data)
     dst.mkdir(parents=True, exist_ok=True)
@@ -51,7 +66,22 @@ def copy_profile(src_user_data: str, dst_user_data: str) -> str:
         for n in names:
             if n in _TRANSIENT:
                 ignored.add(n)
+            elif n.endswith("-journal"):
+                # SQLite WAL journals — always skip, never part of a usable copy
+                ignored.add(n)
+            elif n in _SKIP_IF_LOCKED and (Path(src) / n).is_dir():
+                ignored.add(n)
         return ignored
+
+    def _copy2(src: str, dst_file: str) -> None:
+        """copy2 that tolerates per-file lock errors (running Edge)."""
+        try:
+            shutil.copy2(src, dst_file)
+        except (OSError, shutil.Error) as exc:
+            base = Path(src).name
+            # Cookie files are the login-state core; surface a warning but
+            # do not abort — caller can fall back to CDP cookie export.
+            print(f"[omnigate] skip locked file: {src} ({exc})", file=__import__("sys").stderr)
 
     try:
         shutil.copytree(
@@ -59,7 +89,7 @@ def copy_profile(src_user_data: str, dst_user_data: str) -> str:
             str(dst),
             ignore=_ignore,
             dirs_exist_ok=True,
-            copy_function=shutil.copy2,
+            copy_function=_copy2,
         )
     except (OSError, shutil.Error) as exc:
         raise RuntimeError(f"Failed to copy Edge profile: {exc}") from exc
