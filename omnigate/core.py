@@ -29,21 +29,29 @@ def _page_loaded(b) -> bool:
 
 def _launch_and_navigate(edge: str, url: str, user_data_dir: str, port: int,
                          headless: bool, use_login: bool):
-    """Start a BrowserSession, inject login, navigate. Returns the session."""
+    """Start a BrowserSession, inject login, navigate. Returns the session.
+
+    If start/inject/navigate fails, the launched Edge process is stopped
+    before re-raising, so no orphan is left behind.
+    """
     from omnigate.browser.actions import BrowserSession
     from omnigate.browser.cookies import export_cookies_from_running_edge, inject_cookies
 
     b = BrowserSession(edge, port, user_data_dir, headless=headless)
-    b.start()
-    if use_login:
-        try:
-            cookies = export_cookies_from_running_edge()
-            inject_cookies(b._require_session(), cookies)
-        except RuntimeError:
-            # No debug-port Edge — proceed logged-out rather than fail.
-            pass
-    b.navigate(url)
-    return b
+    try:
+        b.start()
+        if use_login:
+            try:
+                cookies = export_cookies_from_running_edge()
+                inject_cookies(b._require_session(), cookies)
+            except RuntimeError:
+                # No debug-port Edge — proceed logged-out rather than fail.
+                pass
+        b.navigate(url)
+        return b
+    except Exception:
+        b.stop()
+        raise
 
 
 def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
