@@ -38,6 +38,9 @@ omnigate open "<url>" --scroll 3 --text
 # If a CAPTCHA blocks the page, pop a window for a human to solve:
 omnigate open "<url>" --solve-captcha
 
+# Cross-domain SSO site: inject ALL cookies (default is target-domain only)
+omnigate open "<url>" --full-login
+
 # Manage command-sequence scripts (experience memory)
 omnigate script list
 omnigate script show <name>
@@ -78,6 +81,14 @@ msedge.exe --remote-debugging-port=9222
 ```
 
 If no debug-port Edge is running, pages open **logged-out** (still fine for public content). Prefer telling the user to relaunch Edge with the flag when login access matters.
+
+**Domain-scoped by default (security)**: only cookies for the target site's domain are injected. For sites that rely on cross-domain SSO (e.g. Google account login on a third-party site), login may be incomplete — use `--full-login` to inject all cookies:
+
+```bash
+omnigate open "<url>" --full-login
+```
+
+**Request headers are real Edge's own** — omnigate drives a real Edge process, so UA / headers / TLS come from Edge itself (not a spoofed browser). This is the anti-bot value: the traffic looks like a genuine browser. Do not try to "add stealth headers" on top — that would make it LESS like a real browser.
 
 ## Experience Memory (渐进式披露)
 
