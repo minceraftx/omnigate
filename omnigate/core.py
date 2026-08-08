@@ -96,24 +96,34 @@ def _launch_and_navigate(edge: str, url: str, user_data_dir: str, port: int,
     """Start a BrowserSession, inject login, navigate. Returns the session.
 
     If start/inject/navigate fails, the launched Edge process is stopped
-    before re-raising, so no orphan is left behind.
+    before re-raising, so no orphan is left behind. A TOCTOU race on the port
+    (another process grabbed it after free_port()) retries once on a fresh port.
     """
     from omnigate.browser.actions import BrowserSession
 
-    b = BrowserSession(edge, port, user_data_dir, headless=headless)
-    try:
-        b.start()
-        if use_login:
-            try:
-                _navigate_with_login(b, url, full_login)
-            except RuntimeError:
-                # No debug-port Edge — proceed logged-out rather than fail.
+    def _one_try(port_: int):
+        b = BrowserSession(edge, port_, user_data_dir, headless=headless)
+        try:
+            b.start()
+            if use_login:
+                try:
+                    _navigate_with_login(b, url, full_login)
+                except RuntimeError:
+                    # No debug-port Edge — proceed logged-out rather than fail.
+                    b.navigate(url)
+            else:
                 b.navigate(url)
-        else:
-            b.navigate(url)
-        return b
-    except Exception:
-        b.stop()
+            return b
+        except Exception:
+            b.stop()
+            raise
+
+    try:
+        return _one_try(port)
+    except RuntimeError as exc:
+        if "is not Edge" in str(exc):
+            # Port was grabbed by a non-Edge service; retry once on a new port.
+            return _one_try(free_port())
         raise
 
 

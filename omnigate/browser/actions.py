@@ -35,6 +35,14 @@ class BrowserSession:
                     time.sleep(0.5)
             if version is None:
                 raise RuntimeError("Edge did not start CDP endpoint in 30s")
+            # Identity check: free_port() may have been grabbed by another
+            # process between bind and Edge actually listening (TOCTOU).
+            # Edge reports itself as "Edg/151.0..." in the Browser field.
+            browser = (version or {}).get("Browser", "")
+            if not (browser.startswith("Edg/") or browser.startswith("Edge")):
+                raise RuntimeError(
+                    f"Port {self.port} answered but is not Edge (Browser={browser!r})"
+                )
             # Open a fresh tab
             tab = http_get_json(
                 f"http://127.0.0.1:{self.port}/json/new?about:blank",
