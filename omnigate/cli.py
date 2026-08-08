@@ -5,9 +5,21 @@ Design note: core logic lives in functions so commands can be re-skinned
 (e.g. registered as a skill later) without changing behavior.
 """
 import argparse
+import sys
+
+
+def _force_utf8_stdio() -> None:
+    """Reconfigure stdout/stderr to UTF-8 so non-ASCII page content
+    (CJK, emoji, Korean) never trips the Windows GBK default code page."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
 
 
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_stdio()
     parser = argparse.ArgumentParser(
         prog="omnigate",
         description="Browser capability library for AI agents.",
@@ -108,4 +120,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    _force_utf8_stdio()
     raise SystemExit(main())

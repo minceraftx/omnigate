@@ -88,11 +88,10 @@ def _navigate_with_login(b, url: str, full_login: bool) -> None:
     """Inject domain-scoped cookies, navigate, top-up on cross-domain landing.
 
     full_login=True：全量注入（现状行为），无需补注。
-    默认：先注入 url 目标域子集再导航；落地 host 变化时补注新域并 reload 一次。
-    无调试端口 Edge 时抛 RuntimeError，由调用方降级为未登录。
+    默认：先注入 url 目标域子集再导航；落地 host 带来新增可注入 cookie 时补注并
+    reload 一次。无调试端口 Edge 时抛 RuntimeError，由调用方降级为未登录。
     """
     import time as _time
-    from urllib.parse import urlparse
     from omnigate.browser.cookies import (
         cookies_for_url, export_cookies_from_running_edge, inject_cookies,
     )
@@ -114,8 +113,13 @@ def _navigate_with_login(b, url: str, full_login: bool) -> None:
         landed = resp["result"]["result"].get("value") or ""
     except Exception:
         return  # 读不到落点就不补，保持原行为
-    if urlparse(landed).hostname and urlparse(landed).hostname != urlparse(url).hostname:
-        _inject(landed)
+    # 只在落地 host 带来「新增可注入 cookie」时才补注 + reload。
+    # apex↔www 跳转（bilibili.com → www.bilibili.com）两个子集相同，extra 为空，
+    # 跳过补注避免白 reload（主用例每次都多一次页面加载和 2 秒等待）。
+    extra = [c for c in cookies_for_url(cookies, landed)
+             if c not in cookies_for_url(cookies, url)]
+    if extra:
+        inject_cookies(b._require_session(), extra)
         b._require_session().send("Page.reload", {})
         _time.sleep(2)
 
