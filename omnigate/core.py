@@ -9,9 +9,38 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import tempfile
+import time
 from omnigate.browser.cdp import free_port
 from omnigate.browser.edge import find_edge
+
+
+def _cleanup_stale_temp_dirs(max_age_hours: float = 24) -> None:
+    """Best-effort removal of stale omnigate temp profiles.
+
+    24h window avoids deleting concurrently-running instances. Individual
+    failures are skipped (logged to stderr), never fatal. Does not follow
+    symlinks.
+    """
+    tmp = tempfile.gettempdir()
+    prefixes = ("omnigate-run-", "omnigate-profile-")
+    cutoff = time.time() - max_age_hours * 3600
+    try:
+        entries = os.listdir(tmp)
+    except OSError:
+        return
+    for name in entries:
+        if not name.startswith(prefixes):
+            continue
+        full = os.path.join(tmp, name)
+        if os.path.islink(full):
+            continue
+        try:
+            if os.path.getmtime(full) < cutoff:
+                shutil.rmtree(full)
+        except OSError:
+            continue
 
 
 def _resolve_output_path(path: str) -> str:
@@ -180,6 +209,7 @@ def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
     edge = find_edge()
     if edge is None:
         raise RuntimeError("Edge not found. Install Microsoft Edge.")
+    _cleanup_stale_temp_dirs()
     temp_dir = tempfile.mkdtemp(prefix="omnigate-run-")
     user_data_dir = os.path.join(temp_dir, "user-data")
     os.makedirs(user_data_dir, exist_ok=True)
@@ -228,4 +258,8 @@ def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
                 b.stop()
             except Exception:
                 pass
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        try:
+            shutil.rmtree(temp_dir)
+        except OSError as exc:
+            print(f"[omnigate] warning: temp profile cleanup failed: {temp_dir} ({exc})",
+                  file=sys.stderr)
