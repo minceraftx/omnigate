@@ -30,6 +30,25 @@ class TestScriptStore(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.store.load("does-not-exist")
 
+    def test_path_traversal_load_rejected(self):
+        # "../../secret" 消毒后变成 "secret"，不触及目录外文件
+        with self.assertRaises(KeyError):
+            self.store.load("../../secret")
+
+    def test_path_traversal_delete_rejected(self):
+        # 先存一个真实脚本，再用 ../ 指向它应被消毒为同名，不删目录外
+        self.store.save("real", [{"cmd": "navigate", "url": "x"}])
+        with self.assertRaises(KeyError):
+            self.store.delete("../no-such")
+        self.assertIn("real", self.store.list_names())
+
+    def test_name_normalization_consistent(self):
+        # save("my script") 存 myscript.json；load("my script") 也应找到
+        self.store.save("my script", [{"cmd": "navigate", "url": "x"}])
+        loaded = self.store.load("my script")
+        self.assertEqual(loaded, [{"cmd": "navigate", "url": "x"}])
+        self.assertIn("myscript", self.store.list_names())
+
 
 if __name__ == "__main__":
     unittest.main()

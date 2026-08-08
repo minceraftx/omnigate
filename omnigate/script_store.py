@@ -17,18 +17,26 @@ class ScriptStore:
         self.dir = Path(scripts_dir) if scripts_dir else default
         self.dir.mkdir(parents=True, exist_ok=True)
 
-    def save(self, name: str, steps: list[dict]) -> Path:
-        """Save a script. Sanitizes name to a safe filename."""
+    @staticmethod
+    def _safe_name(name: str) -> str:
+        """Sanitize a script name to a safe filename stem (save/load/delete 共用)."""
         safe = "".join(c for c in name if c.isalnum() or c in "-_").strip()
         if not safe:
             raise ValueError(f"Invalid script name: {name}")
+        return safe
+
+    def save(self, name: str, steps: list[dict]) -> Path:
+        """Save a script. Sanitizes name to a safe filename."""
+        safe = self._safe_name(name)
         path = self.dir / f"{safe}.json"
         with open(path, "w", encoding="utf-8") as f:
             json.dump(steps, f, ensure_ascii=False, indent=2)
         return path
 
     def load(self, name: str) -> list[dict]:
-        path = self.dir / f"{name}.json"
+        path = (self.dir / f"{self._safe_name(name)}.json").resolve()
+        if path.parent != self.dir.resolve():
+            raise ValueError(f"Invalid script name: {name}")
         if not path.exists():
             raise KeyError(f"Script not found: {name}")
         with open(path, encoding="utf-8") as f:
@@ -38,7 +46,9 @@ class ScriptStore:
         return sorted(p.stem for p in self.dir.glob("*.json"))
 
     def delete(self, name: str) -> None:
-        path = self.dir / f"{name}.json"
+        path = (self.dir / f"{self._safe_name(name)}.json").resolve()
+        if path.parent != self.dir.resolve():
+            raise ValueError(f"Invalid script name: {name}")
         if path.exists():
             path.unlink()
         else:
