@@ -39,7 +39,11 @@ class CdpSession:
         self._next_id = 0
 
     def connect(self) -> None:
-        self._ws = websocket.create_connection(self.ws_url, timeout=self.timeout)
+        # suppress_origin: websocket-client 默认发送派生 Origin 头，会被 Chrome 的
+        # Origin 校验拒绝；不带 Origin 的非浏览器客户端连接则被放行。
+        self._ws = websocket.create_connection(
+            self.ws_url, timeout=self.timeout, suppress_origin=True
+        )
 
     def close(self) -> None:
         if self._ws is not None:

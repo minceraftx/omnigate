@@ -119,7 +119,6 @@ def build_launch_args(
     """Build the Edge command line for CDP launch."""
     args = [
         f"--remote-debugging-port={port}",
-        "--remote-allow-origins=*",
         f"--user-data-dir={user_data_dir}",
         "--no-first-run",
         "--no-default-browser-check",

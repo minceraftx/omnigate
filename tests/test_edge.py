@@ -25,7 +25,7 @@ class TestBuildLaunchArgs(unittest.TestCase):
         args = build_launch_args(port=9222, user_data_dir="C:/tmp/prof")
         joined = " ".join(args)
         self.assertIn("--remote-debugging-port=9222", joined)
-        self.assertIn("--remote-allow-origins=*", joined)
+        self.assertNotIn("--remote-allow-origins", joined)
         self.assertIn("--user-data-dir=C:/tmp/prof", joined)
 
     def test_headless_flag(self):
