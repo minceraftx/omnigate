@@ -60,6 +60,27 @@ omnigate extract-audio "https://..." --out ./tmp/audio --no-transcribe
 - Physical profile copy still happens behind the scenes for non-login state;
   locked files are skipped individually rather than aborting the whole launch.
 
+## Security Model
+
+- omnigate exports cookies from the running Edge (`Network.getAllCookies`) as
+  the login-state source, but by default **only injects cookies for the
+  target site's domain** into the automation instance. Cross-domain SSO sites
+  can opt into full injection with `--full-login`.
+- The login-state source (an Edge launched with
+  `--remote-debugging-port=9222`) is unauthenticated and local-only: **use a
+  dedicated Edge profile for the login-state source** (only logged into the
+  sites automation needs); do not keep your everyday browser on a debug port.
+- Any agent able to invoke omnigate retains access to whatever the
+  login-state source is logged into — **expose omnigate only to trusted
+  callers**.
+- `open` accepts arbitrary URLs, including `file://` (readable local files,
+  surfaced via `--text`/`--screenshot`) and intranet addresses. Current
+  callers are trusted agents with full local permission, so no scheme
+  allowlist is enforced; **if omnigate is ever exposed to a restricted agent
+  without file access, add an http/https scheme allowlist first**.
+- The automation instance uses a fresh temp profile, deleted on exit; cleanup
+  failures warn on stderr.
+
 ## Compliance
 
 This tool is for learning and research. Respect target sites' robots.txt and
