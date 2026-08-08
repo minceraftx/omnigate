@@ -14,6 +14,18 @@ from omnigate.browser.cdp import free_port
 from omnigate.browser.edge import find_edge
 
 
+def _resolve_output_path(path: str) -> str:
+    """Resolve an output path, refusing anything outside the current working directory.
+
+    realpath 同时消除 .. 与符号链接；不同盘符自然不满足前缀条件。
+    """
+    base = os.path.realpath(os.getcwd())
+    target = os.path.realpath(path)
+    if target != base and not target.startswith(base + os.sep):
+        raise ValueError(f"Output path must be inside the working directory: {path}")
+    return target
+
+
 def _page_loaded(b) -> bool:
     """A page is 'loaded enough' if it has a non-empty title OR body text."""
     try:
@@ -194,9 +206,10 @@ def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
         if get_text:
             result["text"] = b.text()
         if screenshot:
-            os.makedirs(os.path.dirname(screenshot) or ".", exist_ok=True)
-            b.screenshot(screenshot)
-            result["screenshot"] = screenshot
+            shot = _resolve_output_path(screenshot)
+            os.makedirs(os.path.dirname(shot) or ".", exist_ok=True)
+            b.screenshot(shot)
+            result["screenshot"] = shot
         b.stop()
         return result
     finally:
