@@ -43,27 +43,62 @@ def _page_html(b) -> str:
         return None
 
 
+def _navigate_with_login(b, url: str, full_login: bool) -> None:
+    """Inject domain-scoped cookies, navigate, top-up on cross-domain landing.
+
+    full_login=True：全量注入（现状行为），无需补注。
+    默认：先注入 url 目标域子集再导航；落地 host 变化时补注新域并 reload 一次。
+    无调试端口 Edge 时抛 RuntimeError，由调用方降级为未登录。
+    """
+    import time as _time
+    from urllib.parse import urlparse
+    from omnigate.browser.cookies import (
+        cookies_for_url, export_cookies_from_running_edge, inject_cookies,
+    )
+
+    cookies = export_cookies_from_running_edge()
+
+    def _inject(target_url: str) -> int:
+        subset = cookies if full_login else cookies_for_url(cookies, target_url)
+        return inject_cookies(b._require_session(), subset)
+
+    _inject(url)
+    b.navigate(url)
+    if full_login:
+        return
+    try:
+        resp = b._require_session().send(
+            "Runtime.evaluate", {"expression": "location.href", "returnByValue": True}
+        )
+        landed = resp["result"]["result"].get("value") or ""
+    except Exception:
+        return  # 读不到落点就不补，保持原行为
+    if urlparse(landed).hostname and urlparse(landed).hostname != urlparse(url).hostname:
+        _inject(landed)
+        b._require_session().send("Page.reload", {})
+        _time.sleep(2)
+
+
 def _launch_and_navigate(edge: str, url: str, user_data_dir: str, port: int,
-                         headless: bool, use_login: bool):
+                         headless: bool, use_login: bool, full_login: bool = False):
     """Start a BrowserSession, inject login, navigate. Returns the session.
 
     If start/inject/navigate fails, the launched Edge process is stopped
     before re-raising, so no orphan is left behind.
     """
     from omnigate.browser.actions import BrowserSession
-    from omnigate.browser.cookies import export_cookies_from_running_edge, inject_cookies
 
     b = BrowserSession(edge, port, user_data_dir, headless=headless)
     try:
         b.start()
         if use_login:
             try:
-                cookies = export_cookies_from_running_edge()
-                inject_cookies(b._require_session(), cookies)
+                _navigate_with_login(b, url, full_login)
             except RuntimeError:
                 # No debug-port Edge — proceed logged-out rather than fail.
-                pass
-        b.navigate(url)
+                b.navigate(url)
+        else:
+            b.navigate(url)
         return b
     except Exception:
         b.stop()
@@ -71,7 +106,8 @@ def _launch_and_navigate(edge: str, url: str, user_data_dir: str, port: int,
 
 
 def _solve_captcha_popup(b, edge: str, url: str, user_data_dir: str,
-                         use_login: bool, features: list[str]) -> None:
+                         use_login: bool, features: list[str],
+                         full_login: bool = False) -> None:
     """Relaunch headed, re-inject login, navigate back, and poll until the
     captcha is gone (default 3 min, override with OMNIGATE_CAPTCHA_TIMEOUT).
     Prints protocol lines to stdout."""
@@ -84,13 +120,15 @@ def _solve_captcha_popup(b, edge: str, url: str, user_data_dir: str,
     b.stop()
     b.headless = False
     b.start()
-    try:
-        b.inject_login()
-    except Exception:
-        # No debug-port Edge or inject hiccup — pop the window logged-out
-        # rather than fail the whole flow.
-        pass
-    b.navigate(url)
+    if use_login:
+        try:
+            _navigate_with_login(b, url, full_login)
+        except Exception:
+            # No debug-port Edge or inject hiccup — pop the window logged-out
+            # rather than fail the whole flow.
+            b.navigate(url)
+    else:
+        b.navigate(url)
     print("[CAPTCHA] CAPTCHA_WINDOW_OPENED - 请人工解决")
 
     deadline = _time.time() + timeout
@@ -108,12 +146,14 @@ def _solve_captcha_popup(b, edge: str, url: str, user_data_dir: str,
 
 def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
               get_text: bool = False, scroll_count: int = 0,
-              use_login: bool = True, solve_captcha: bool = False) -> dict:
+              use_login: bool = True, solve_captcha: bool = False,
+              full_login: bool = False) -> dict:
     """Open a URL in a headless Edge, carrying login cookies from the real Edge.
 
     Returns dict with title, text (optional), screenshot path (optional).
     Uses a fresh temp user-data dir; login state comes from CDP cookie
     export+inject. If headless page fails to load, retries once headed.
+    full_login=True injects all cookies (for cross-domain SSO sites).
     """
     edge = find_edge()
     if edge is None:
@@ -124,14 +164,16 @@ def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
     port = free_port()
     b = None
     try:
-        b = _launch_and_navigate(edge, url, user_data_dir, port, headless, use_login)
+        b = _launch_and_navigate(edge, url, user_data_dir, port, headless,
+                                 use_login, full_login)
 
         # Retry once headed if the headless page didn't load (some sites
         # reject headless; a real window is less suspicious).
         if headless and not _page_loaded(b):
             b.stop()
             b = _launch_and_navigate(edge, url, user_data_dir, free_port(),
-                                     headless=False, use_login=use_login)
+                                     headless=False, use_login=use_login,
+                                     full_login=full_login)
 
         result: dict = {"url": url, "title": b.title()}
 
@@ -143,7 +185,8 @@ def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
         if features:
             print(captcha_event(features, url))
             if solve_captcha:
-                _solve_captcha_popup(b, edge, url, user_data_dir, use_login, features)
+                _solve_captcha_popup(b, edge, url, user_data_dir, use_login,
+                                     features, full_login)
 
         if scroll_count > 0:
             for _ in range(scroll_count):

@@ -34,6 +34,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="Skip login-state injection (open logged-out)")
     p.add_argument("--solve-captcha", action="store_true",
                    help="如果检测到验证码，立即弹窗人工解决（默认只告知不弹窗）")
+    p.add_argument("--full-login", action="store_true",
+                   help="注入全量 Cookie（默认只注入目标站点域；跨域 SSO 站点用此项）")
 
     p = sub.add_parser("script", help="Manage command-sequence scripts")
     ssub = p.add_subparsers(dest="script_cmd", required=True)
@@ -71,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
             args.url, headless=args.headless,
             screenshot=args.screenshot, get_text=args.text,
             scroll_count=args.scroll, use_login=not args.no_login,
-            solve_captcha=args.solve_captcha,
+            solve_captcha=args.solve_captcha, full_login=args.full_login,
         )
         print(f"TITLE: {result['title']}")
         if result.get("text"):

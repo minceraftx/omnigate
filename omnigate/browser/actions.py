@@ -88,12 +88,6 @@ class BrowserSession:
         expr = f"window.scrollBy(0, {sign * amount}); 'ok'"
         self._require_session().send("Runtime.evaluate", {"expression": expr})
 
-    def inject_login(self) -> int:
-        """Re-export cookies from running Edge and inject them. Returns count."""
-        from omnigate.browser.cookies import export_cookies_from_running_edge, inject_cookies
-        cookies = export_cookies_from_running_edge()
-        return inject_cookies(self._require_session(), cookies)
-
     def _require_session(self) -> CdpSession:
         if self._session is None:
             raise RuntimeError("BrowserSession not started")

@@ -15,6 +15,7 @@ The running real Edge must expose a CDP debug port. Check with
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlparse
 
 from omnigate.browser.cdp import CdpSession, http_get_json
 
@@ -81,3 +82,18 @@ def inject_cookies(session: CdpSession, cookies: list[dict[str, Any]]) -> int:
         return 0
     session.send("Network.setCookies", {"cookies": cookies})
     return len(cookies)
+
+
+def cookies_for_url(cookies: list[dict[str, Any]], url: str) -> list[dict[str, Any]]:
+    """Return the subset of cookies applicable to the URL's host.
+
+    匹配方向：cookie domain == host，或 cookie domain 是 host 的祖先域
+    （'.bilibili.com' 覆盖 www/passport/api.bilibili.com）。
+    反向不匹配（子域 cookie 不发给父域）；异名域（evilbilibili.com）不匹配。
+    """
+    host = urlparse(url).hostname or ""
+    return [
+        c for c in cookies
+        if host == (d := str(c.get("domain", "")).lstrip("."))
+        or host.endswith("." + d)
+    ]
