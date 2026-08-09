@@ -14,6 +14,9 @@ pip install yt-dlp qwen-asr  # only if using audio extraction/transcription
 ## Usage
 
 ```bash
+# Diagnose environment: Edge found? login-state source available?
+omnigate doctor
+
 # Open a page, get title + text
 omnigate open "https://example.com" --text
 
@@ -26,12 +29,30 @@ omnigate open "https://example.com" --headed
 # Open without login-state injection (logged-out)
 omnigate open "https://example.com" --no-login
 
+# List interactive elements (helps write CSS selectors for scripts)
+omnigate open "https://example.com" --state
+
+# Cross-domain SSO site: inject ALL cookies (default is target-domain only)
+omnigate open "https://example.com" --full-login
+
+# If a CAPTCHA blocks the page, pop a window for a human to solve
+omnigate open "https://example.com" --solve-captcha
+
+# Experience memory: command-sequence scripts
+omnigate script list
+omnigate script show <name>
+omnigate script save <name> --steps '[{"cmd":"navigate","url":"..."}]'
+omnigate script run <name>   # replay a script (re-executes its steps)
+omnigate script delete <name>
+
 # Extract audio and transcribe (lazy-loads Qwen3 ASR)
 omnigate extract-audio "https://www.bilibili.com/video/BVxxxx" --out ./tmp/audio
 
 # Extract audio only (no model load)
 omnigate extract-audio "https://..." --out ./tmp/audio --no-transcribe
 ```
+
+Script steps support: `navigate {url}`, `wait {selector}`, `click {selector}`, `input {selector,text,enter?}`, `extract {}`, `scroll {direction?}`. The first step must be `navigate`. On replay, a missing element marks the script `STALE` (site changed) — re-record and update the lesson.
 
 ## How it works
 
@@ -50,6 +71,28 @@ omnigate extract-audio "https://..." --out ./tmp/audio --no-transcribe
   then transcribes with Qwen3-ASR-1.7B running locally on CUDA. The ASR model
   is lazy-loaded — browser tasks never pay its memory cost, and it loads from
   the local cache only (fully offline).
+
+## CAPTCHA protocol
+
+`open` auto-detects CAPTCHAs and reports them **without blocking** (page content still returned). The model decides how to act:
+
+```
+[CAPTCHA] recaptcha url: <url>           ← detected, page content also returned
+[CAPTCHA] CAPTCHA_WINDOW_OPENED          ← after --solve-captcha, window popped
+[CAPTCHA] CAPTCHA_RESOLVED - 继续         ← human solved, task continues
+[CAPTCHA] CAPTCHA_TIMEOUT - <s>秒未解决    ← human didn't solve in time
+```
+
+On a `[CAPTCHA]` line, first read the page text (may be a false positive); if genuinely blocked, run `--solve-captcha` to pop a window for a human.
+
+## Experience Memory (double-mode)
+
+omnigate keeps two knowledge stores so the model "learns once, never re-learns":
+
+- `omnigate/scripts/` — saved command-sequence scripts. Reuse an existing script before improvising.
+- `omnigate/lessons/<site>.md` — lessons about a site (anti-bot, captchas, extraction tricks). Written by the model after solving a new problem.
+
+The skill uses **progressive disclosure**: it only points at these stores and the model reads the relevant file before working on a site.
 
 ## Notes & limitations
 
