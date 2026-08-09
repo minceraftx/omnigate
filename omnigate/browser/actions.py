@@ -144,6 +144,47 @@ class BrowserSession:
         value = resp["result"]["result"].get("value")
         return value if isinstance(value, list) else []
 
+    def click(self, selector: str) -> bool:
+        """Click the first element matching selector. Returns True if clicked."""
+        expr = """
+        (() => {
+          const el = document.querySelector(%r);
+          if (!el) return false;
+          el.scrollIntoView({block: 'center'});
+          el.click();
+          return true;
+        })()
+        """ % selector
+        resp = self._require_session().send(
+            "Runtime.evaluate", {"expression": expr, "returnByValue": True}
+        )
+        return bool(resp["result"]["result"].get("value"))
+
+    def input(self, selector: str, text: str, enter: bool = False) -> bool:
+        """Set an input's value and dispatch input event. Returns True if set."""
+        expr = """
+        (() => {
+          const el = document.querySelector(%r);
+          if (!el) return false;
+          el.scrollIntoView({block: 'center'});
+          el.focus();
+          el.value = %r;
+          el.dispatchEvent(new Event('input', {bubbles: true}));
+          el.dispatchEvent(new Event('change', {bubbles: true}));
+          return true;
+        })()
+        """ % (selector, text)
+        resp = self._require_session().send(
+            "Runtime.evaluate", {"expression": expr, "returnByValue": True}
+        )
+        ok = bool(resp["result"]["result"].get("value"))
+        if ok and enter:
+            self._require_session().send(
+                "Runtime.evaluate",
+                {"expression": "(function(){const el=document.querySelector(%r); if(!el)return false; el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,which:13,bubbles:true})); return true;})()" % selector},
+            )
+        return ok
+
     def _require_session(self) -> CdpSession:
         if self._session is None:
             raise RuntimeError("BrowserSession not started")
