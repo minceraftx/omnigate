@@ -96,6 +96,23 @@ class BrowserSession:
         expr = f"window.scrollBy(0, {sign * amount}); 'ok'"
         self._require_session().send("Runtime.evaluate", {"expression": expr})
 
+    def element_exists(self, selector: str) -> bool:
+        """Whether at least one element matches the CSS selector."""
+        expr = f"!!document.querySelector({selector!r})"
+        resp = self._require_session().send(
+            "Runtime.evaluate", {"expression": expr, "returnByValue": True}
+        )
+        return bool(resp["result"]["result"].get("value"))
+
+    def wait_for(self, selector: str, timeout: float = 10.0) -> bool:
+        """Wait until an element matching selector appears. Returns True if found."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.element_exists(selector):
+                return True
+            time.sleep(0.5)
+        return False
+
     def _require_session(self) -> CdpSession:
         if self._session is None:
             raise RuntimeError("BrowserSession not started")
