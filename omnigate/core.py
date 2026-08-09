@@ -199,6 +199,51 @@ def _solve_captcha_popup(b, edge: str, url: str, user_data_dir: str,
     print(f"[CAPTCHA] CAPTCHA_TIMEOUT - {int(timeout)}秒未解决")
 
 
+def run_script_page(name_or_steps, *, headless: bool = True, use_login: bool = True):
+    """Load a script, launch Edge, replay it. Returns replay result dict.
+
+    The first step must be navigate — it is done by _launch_and_navigate
+    (with login injection); remaining steps run through the replay engine.
+    """
+    from omnigate.browser.run_script import run_script
+    from omnigate.script_store import ScriptStore
+
+    if isinstance(name_or_steps, str):
+        steps = ScriptStore().load(name_or_steps)
+    else:
+        steps = name_or_steps
+    if not steps or steps[0].get("cmd") != "navigate":
+        raise ValueError("Script must start with a navigate step")
+
+    edge = find_edge()
+    if edge is None:
+        raise RuntimeError("Edge not found. Install Microsoft Edge.")
+    _cleanup_stale_temp_dirs()
+    temp_dir = tempfile.mkdtemp(prefix="omnigate-run-")
+    user_data_dir = os.path.join(temp_dir, "user-data")
+    os.makedirs(user_data_dir, exist_ok=True)
+    b = None
+    try:
+        b = _launch_and_navigate(edge, steps[0]["url"], user_data_dir, free_port(),
+                                 headless, use_login)
+        result = run_script(b, steps[1:])
+        if result.get("text") is None:
+            result["text"] = b.text()
+        b.stop()
+        return result
+    finally:
+        if b is not None:
+            try:
+                b.stop()
+            except Exception:
+                pass
+        try:
+            shutil.rmtree(temp_dir)
+        except OSError as exc:
+            print(f"[omnigate] warning: temp profile cleanup failed: {temp_dir} ({exc})",
+                  file=sys.stderr)
+
+
 def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
               get_text: bool = False, scroll_count: int = 0,
               use_login: bool = True, solve_captcha: bool = False,

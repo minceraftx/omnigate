@@ -57,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     psave.add_argument("name")
     psave.add_argument("--steps", required=True, help="JSON array of steps")
     ssub.add_parser("delete", help="Delete a script").add_argument("name")
+    ssub.add_parser("run", help="Replay a script").add_argument("name")
 
     args = parser.parse_args(argv)
 
@@ -115,6 +116,16 @@ def main(argv: list[str] | None = None) -> int:
             store.delete(args.name)
             print(f"deleted: {args.name}")
             return 0
+        if args.script_cmd == "run":
+            from omnigate.core import run_script_page
+            result = run_script_page(args.name)
+            print(f"STALE: {result.get('stale', False)}")
+            print(f"FAILED: {result.get('failed', False)}")
+            if result.get("text"):
+                print(f"TEXT:\n{result['text']}")
+            if result.get("error"):
+                print(f"ERROR: {result['error']}")
+            return 1 if result.get("failed") or result.get("stale") else 0
 
     return 0
 
