@@ -247,7 +247,7 @@ def run_script_page(name_or_steps, *, headless: bool = True, use_login: bool = T
 def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
               get_text: bool = False, scroll_count: int = 0,
               use_login: bool = True, solve_captcha: bool = False,
-              full_login: bool = False) -> dict:
+              full_login: bool = False, get_state: bool = False) -> dict:
     """Open a URL in a headless Edge, carrying login cookies from the real Edge.
 
     Returns dict with title, text (optional), screenshot path (optional).
@@ -277,6 +277,9 @@ def open_page(url: str, *, headless: bool = True, screenshot: str | None = None,
                                      full_login=full_login)
 
         result: dict = {"url": url, "title": b.title()}
+
+        if get_state:
+            result["state"] = b.state()
 
         # Captcha detection — non-blocking by default. Inform the model via
         # the stdout protocol; only pop a window when solve_captcha is set.

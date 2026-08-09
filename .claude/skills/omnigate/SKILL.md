@@ -45,6 +45,7 @@ omnigate open "<url>" --full-login
 omnigate script list
 omnigate script show <name>
 omnigate script save <name> --steps '[{"cmd":"navigate","url":"..."}]'
+omnigate script run <name>        # replay a script (re-executes its steps)
 omnigate script delete <name>
 
 # Extract audio and transcribe (lazy-loads Qwen3 ASR, offline)
@@ -53,6 +54,10 @@ omnigate extract-audio "<url>" --out ./tmp/audio
 # Extract audio only (no ASR model load)
 omnigate extract-audio "<url>" --out ./tmp/audio --no-transcribe
 ```
+
+Script steps support: `navigate {url}`, `wait {selector}`, `click {selector}`, `input {selector,text,enter?}`, `extract {}`, `scroll {direction?}`. First step must be `navigate`. On replay, a missing element marks the script `STALE` (site changed) — re-record it and update the lesson.
+
+**Write selectors from the real DOM, never guess.** To inspect a page's interactive elements, use the browser layer's `state` action (lists buttons/inputs/links with tag, text, id, class). Interaction uses CSS selectors, not indexes — more stable across site changes.
 
 Output format: `TITLE: ...`, `TEXT: ...`, `SCREENSHOT: <path>`, `AUDIO: <path>`, `TEXT: <transcript>`, `[CAPTCHA] ...`.
 

@@ -48,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="如果检测到验证码，立即弹窗人工解决（默认只告知不弹窗）")
     p.add_argument("--full-login", action="store_true",
                    help="注入全量 Cookie（默认只注入目标站点域；跨域 SSO 站点用此项）")
+    p.add_argument("--state", action="store_true",
+                   help="列出页面可交互元素（供写 CSS selector）")
 
     p = sub.add_parser("script", help="Manage command-sequence scripts")
     ssub = p.add_subparsers(dest="script_cmd", required=True)
@@ -87,8 +89,12 @@ def main(argv: list[str] | None = None) -> int:
             screenshot=args.screenshot, get_text=args.text,
             scroll_count=args.scroll, use_login=not args.no_login,
             solve_captcha=args.solve_captcha, full_login=args.full_login,
+            get_state=args.state,
         )
         print(f"TITLE: {result['title']}")
+        if result.get("state"):
+            for e in result["state"]:
+                print(f"  [{e['i']}] <{e['tag']}> text={e.get('text','')!r} id={e.get('id','')!r} cls={e.get('cls','')!r}")
         if result.get("text"):
             print(f"TEXT:\n{result['text']}")
         if result.get("screenshot"):
