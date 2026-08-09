@@ -113,6 +113,37 @@ class BrowserSession:
             time.sleep(0.5)
         return False
 
+    def state(self, limit: int = 30) -> list[dict]:
+        """List interactive elements (button/input/a/link) with index + tag + text.
+
+        Model reads this to write precise CSS selectors for click/input.
+        """
+        expr = """
+        (() => {
+          const els = [...document.querySelectorAll('button, input, a, select, [role=button], [onclick]')];
+          const out = [];
+          for (const [i, el] of els.entries()) {
+            if (i >= %d) break;
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) continue; // hidden
+            out.push({
+              i: i,
+              tag: el.tagName.toLowerCase(),
+              type: el.getAttribute('type') || '',
+              text: (el.innerText || el.value || el.getAttribute('aria-label') || '').trim().slice(0, 60),
+              id: el.id || '',
+              cls: (el.className && typeof el.className === 'string') ? el.className.slice(0, 40) : ''
+            });
+          }
+          return out;
+        })()
+        """ % limit
+        resp = self._require_session().send(
+            "Runtime.evaluate", {"expression": expr, "returnByValue": True}
+        )
+        value = resp["result"]["result"].get("value")
+        return value if isinstance(value, list) else []
+
     def _require_session(self) -> CdpSession:
         if self._session is None:
             raise RuntimeError("BrowserSession not started")
