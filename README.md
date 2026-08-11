@@ -45,14 +45,21 @@ omnigate script save <name> --steps '[{"cmd":"navigate","url":"..."}]'
 omnigate script run <name>   # replay a script (re-executes its steps)
 omnigate script delete <name>
 
-# Extract audio and transcribe (lazy-loads Qwen3 ASR)
+# Manage ASR backend (funasr / whisper / qwen_asr / auto)
+omnigate asr status        # what's configured + what's available
+omnigate asr set whisper   # persist a backend choice; "auto" to reset
+
+# Extract audio and transcribe (lazy-loads ASR model)
 omnigate extract-audio "https://www.bilibili.com/video/BVxxxx" --out ./tmp/audio
 
 # Extract audio only (no model load)
 omnigate extract-audio "https://..." --out ./tmp/audio --no-transcribe
+
+# Force a backend for this call (overrides config)
+omnigate extract-audio "https://..." --out ./tmp/audio --backend whisper
 ```
 
-Transcription backend is auto-selected: FunASR env (`D:\whisper\funasr\python.exe`, or `FUNASR_PYTHON`) when present — Qwen3-ASR + fsmn-vad, no OOM on long videos — otherwise the built-in qwen_asr backend.
+Transcription backend resolution is deterministic: explicit `--backend` > saved config (`omnigate asr set`) > auto. `auto` picks the FunASR env (`D:\whisper\funasr\python.exe`, or `FUNASR_PYTHON`) when present — Qwen3-ASR + fsmn-vad, no OOM on long videos — otherwise the built-in qwen_asr. A configured-but-unavailable backend raises a clear error instead of silently swapping.
 
 Script steps support: `navigate {url}`, `wait {selector}`, `click {selector}`, `input {selector,text,enter?}`, `extract {}`, `scroll {direction?}`. The first step must be `navigate`. On replay, a missing element marks the script `STALE` (site changed) — re-record and update the lesson.
 
@@ -72,11 +79,13 @@ Script steps support: `navigate {url}`, `wait {selector}`, `click {selector}`, `
 - **Audio**: `extract-audio` pulls the audio stream with yt-dlp to a wav file,
   then transcribes locally on CUDA. The ASR model is lazy-loaded — browser
   tasks never pay its memory cost — and loads from the local HF cache only
-  (fully offline). Transcription backends are a small lookup table, picked
-  automatically: `funasr` (Qwen3-ASR via a FunASR env, fsmn-vad splits long
+  (fully offline). Transcription backends are a small lookup table resolved
+  as `--backend` > saved config (`~/.omnigate/config.json`, via `omnigate asr
+  set`) > auto: `funasr` (Qwen3-ASR via a FunASR env, fsmn-vad splits long
   audio so videos never OOM) when its python is found, else `qwen_asr`
-  (in-process, long audio split into fixed segments). Set `FUNASR_PYTHON` to
-  point at a python with FunASR installed.
+  (in-process, long audio split into fixed segments). `whisper` (in-process
+  openai-whisper, large-v3 cached locally) is also available. Set
+  `FUNASR_PYTHON` to point at a python with FunASR installed.
 
 ## CAPTCHA protocol
 

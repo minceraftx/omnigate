@@ -48,14 +48,21 @@ omnigate script save <name> --steps '[{"cmd":"navigate","url":"..."}]'
 omnigate script run <name>        # replay a script (re-executes its steps)
 omnigate script delete <name>
 
-# Extract audio and transcribe (lazy-loads Qwen3 ASR, offline)
+# Manage ASR backend (funasr / whisper / qwen_asr / auto)
+omnigate asr status        # what's configured + what's available
+omnigate asr set whisper   # persist a backend choice; "auto" to reset
+
+# Extract audio and transcribe (lazy-loads ASR model, offline)
 omnigate extract-audio "<url>" --out ./tmp/audio
 
 # Extract audio only (no ASR model load)
 omnigate extract-audio "<url>" --out ./tmp/audio --no-transcribe
+
+# Force a backend for this call (overrides config)
+omnigate extract-audio "<url>" --out ./tmp/audio --backend whisper
 ```
 
-Transcription backend is chosen automatically: the FunASR env (`D:\whisper\funasr\python.exe`, or set `FUNASR_PYTHON`) when present — Qwen3-ASR + fsmn-vad, no OOM on long videos — otherwise the built-in qwen_asr backend.
+Transcription backend resolution is deterministic: explicit `--backend` > saved config (`omnigate asr set`) > auto. `auto` picks the FunASR env (`D:\whisper\funasr\python.exe`, or `FUNASR_PYTHON`) when present — Qwen3-ASR + fsmn-vad, no OOM on long videos — else the built-in qwen_asr. A configured-but-unavailable backend raises a clear error instead of guessing; run `omnigate asr status` to check before choosing.
 
 Script steps support: `navigate {url}`, `wait {selector}`, `click {selector}`, `input {selector,text,enter?}`, `extract {}`, `scroll {direction?}`. First step must be `navigate`. On replay, a missing element marks the script `STALE` (site changed) — re-record it and update the lesson.
 
@@ -126,9 +133,10 @@ Lesson file format (`omnigate/lessons/<site>.md`):
 - **Do not transcribe a video by hand** (yt-dlp+whisper+model juggling). `omnigate extract-audio` does the whole pipeline offline.
 - **Model is lazy-loaded** — `--no-transcribe` avoids the ~1.7B model entirely for audio-only needs.
 - **Never auto-retry a CAPTCHA by guessing.** Read the page, decide, use `--solve-captcha` if genuinely blocked, stop on timeout.
+- **Don't guess the ASR backend.** Run `omnigate asr status` to see what's available, ask the user once which to prefer, then `omnigate asr set <name>` so future calls just work.
 
 ## Notes
 
-- ASR is fully offline (HF cache only); Qwen3-ASR-1.7B already cached on this machine. Backend auto-picks FunASR (when its env exists) over the built-in qwen_asr.
+- ASR is fully offline (HF cache only); Qwen3-ASR-1.7B already cached on this machine. Backends: `funasr` (best Chinese, punctuation, no OOM on long audio), `whisper` (large-v3 cached, no punctuation), `qwen_asr`. Ask the user once which to prefer, persist with `omnigate asr set <name>`, then always use the saved backend.
 - Every `open` uses a fresh temp user-data dir and cleans up after itself.
 - Compliance: learning/research only. Respect robots.txt and site rules.

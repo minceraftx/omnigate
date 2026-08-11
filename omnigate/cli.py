@@ -34,6 +34,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default="./tmp/audio", help="Output dir for audio + transcript")
     p.add_argument("--no-transcribe", action="store_true",
                    help="Skip transcription (only extract audio)")
+    p.add_argument("--backend", default="auto",
+                   choices=["auto", "funasr", "qwen_asr", "whisper"],
+                   help="Transcription backend (default auto)")
+
+    pasr = sub.add_parser("asr", help="Manage ASR transcription backend")
+    asrsub = pasr.add_subparsers(dest="asr_cmd", required=True)
+    asrsub.add_parser("status", help="Show ASR backend status")
+    pset = asrsub.add_parser("set", help="Set ASR backend (persisted)")
+    pset.add_argument("backend")
 
     p = sub.add_parser("open", help="Open a URL in headless Edge, return content")
     p.add_argument("url", help="URL to open")
@@ -78,9 +87,32 @@ def main(argv: list[str] | None = None) -> int:
         path = extract_audio(args.url, args.out)
         print(f"AUDIO: {path}")
         if not args.no_transcribe:
-            text = transcribe_wav(path)
+            text = transcribe_wav(path, backend=args.backend)
             print(f"TEXT: {text}")
         return 0
+
+    if args.command == "asr":
+        from omnigate.audio import transcribe as T
+        if args.asr_cmd == "status":
+            cur = T._load_config().get("asr_backend", "auto")
+            label = "configured" if cur != "auto" else "auto (detect)"
+            print(f"ASR BACKEND: {cur} [{label}]")
+            for name, avail, note in T.backend_status():
+                mark = "[OK]" if avail else "[MISSING]"
+                print(f"  {name:<8} {mark}  {note}")
+            return 0
+        if args.asr_cmd == "set":
+            if args.backend != "auto" and args.backend not in T._BACKENDS:
+                print(f"unknown backend: {args.backend}. Known: auto, {', '.join(T._BACKENDS)}")
+                return 1
+            cfg = T._load_config()
+            if args.backend == "auto":
+                cfg.pop("asr_backend", None)
+            else:
+                cfg["asr_backend"] = args.backend
+            T._save_config(cfg)
+            print(f"asr backend set to: {args.backend}")
+            return 0
 
     if args.command == "open":
         from omnigate.core import open_page
