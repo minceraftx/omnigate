@@ -52,6 +52,8 @@ omnigate extract-audio "https://www.bilibili.com/video/BVxxxx" --out ./tmp/audio
 omnigate extract-audio "https://..." --out ./tmp/audio --no-transcribe
 ```
 
+Transcription backend is auto-selected: FunASR env (`D:\whisper\funasr\python.exe`, or `FUNASR_PYTHON`) when present — Qwen3-ASR + fsmn-vad, no OOM on long videos — otherwise the built-in qwen_asr backend.
+
 Script steps support: `navigate {url}`, `wait {selector}`, `click {selector}`, `input {selector,text,enter?}`, `extract {}`, `scroll {direction?}`. The first step must be `navigate`. On replay, a missing element marks the script `STALE` (site changed) — re-record and update the lesson.
 
 ## How it works
@@ -68,9 +70,13 @@ Script steps support: `navigate {url}`, `wait {selector}`, `click {selector}`, `
   If no debug-port Edge is reachable, pages open logged-out (a logged-out
   session still works for public content).
 - **Audio**: `extract-audio` pulls the audio stream with yt-dlp to a wav file,
-  then transcribes with Qwen3-ASR-1.7B running locally on CUDA. The ASR model
-  is lazy-loaded — browser tasks never pay its memory cost, and it loads from
-  the local cache only (fully offline).
+  then transcribes locally on CUDA. The ASR model is lazy-loaded — browser
+  tasks never pay its memory cost — and loads from the local HF cache only
+  (fully offline). Transcription backends are a small lookup table, picked
+  automatically: `funasr` (Qwen3-ASR via a FunASR env, fsmn-vad splits long
+  audio so videos never OOM) when its python is found, else `qwen_asr`
+  (in-process, long audio split into fixed segments). Set `FUNASR_PYTHON` to
+  point at a python with FunASR installed.
 
 ## CAPTCHA protocol
 

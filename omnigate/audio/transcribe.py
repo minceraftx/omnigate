@@ -1,14 +1,28 @@
 """Audio extraction + transcription.
 
 extract_audio: use yt-dlp to pull a video's audio stream to a local wav file.
-transcribe_wav: lazily load Qwen3 ASR and transcribe a wav file.
+transcribe_wav: transcribe a wav file to text, auto-selecting a backend.
 
-The ASR model is NOT imported at module load — it only loads inside
-transcribe_wav, so running browser tasks never pays the model's memory cost.
+Backends are a small lookup table — resolve_backend picks one and each backend
+is one _transcribe_<name> function (add a backend with one row + one function,
+not if/elif sprawl):
+
+  - funasr  : runs funasr_transcribe.py in the FunASR env (D:\\whisper\\funasr)
+              via subprocess. Qwen3-ASR + fsmn-vad, so long audio never OOMs.
+              The separate env keeps this repo's torch/transformers untouched.
+  - qwen_asr: the original in-process backend (qwen_asr lib; long audio is
+              split into fixed segments to cap VRAM).
+
+Models load lazily inside a transcribe call only — browser tasks never pay the
+memory cost.
 """
 from __future__ import annotations
 
 import os
+import subprocess
+
+_BACKENDS = ("funasr", "qwen_asr")
+_FUNASR_PYTHON_DEFAULT = r"D:\whisper\funasr\python.exe"
 
 
 def extract_audio(url: str, output_dir: str) -> str:
@@ -44,16 +58,85 @@ def extract_audio(url: str, output_dir: str) -> str:
     return wav_path
 
 
+def _find_funasr_python() -> str | None:
+    """Path to a python that has FunASR installed, or None if not found."""
+    env = os.environ.get("FUNASR_PYTHON", "").strip()
+    if env:
+        return env
+    return _FUNASR_PYTHON_DEFAULT if os.path.exists(_FUNASR_PYTHON_DEFAULT) else None
+
+
+def resolve_backend(backend: str = "auto") -> str:
+    """Resolve a backend name; 'auto' picks funasr when available else qwen_asr."""
+    if backend == "auto":
+        return "funasr" if _find_funasr_python() else "qwen_asr"
+    if backend not in _BACKENDS:
+        raise ValueError(
+            f"Unknown transcription backend: {backend!r}. Known: auto, {', '.join(_BACKENDS)}"
+        )
+    return backend
+
+
 def transcribe_wav(
+    wav_path: str,
+    backend: str = "auto",
+    model_name: str = "Qwen/Qwen3-ASR-1.7B",
+    device: str = "cuda:0",
+    segment_seconds: float = 120.0,
+) -> str:
+    """Transcribe a wav file to text via the selected backend (default auto).
+
+    Returns the transcript text. Raises RuntimeError on failure.
+    """
+    be = resolve_backend(backend)
+    if be == "funasr":
+        return _transcribe_funasr(wav_path)
+    return _transcribe_qwen_asr(wav_path, model_name, device, segment_seconds)
+
+
+def _transcribe_funasr(wav_path: str) -> str:
+    """Transcribe via the FunASR env (separate python, run as a subprocess)."""
+    funasr_python = _find_funasr_python()
+    if funasr_python is None:
+        raise RuntimeError(
+            "FunASR backend requested but no FunASR python found. "
+            f"Set FUNASR_PYTHON or install one at {_FUNASR_PYTHON_DEFAULT}."
+        )
+    script = os.path.join(os.path.dirname(__file__), "funasr_transcribe.py")
+    proc = subprocess.run(
+        [funasr_python, script, os.path.abspath(wav_path)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"FunASR transcription failed ({proc.returncode}): "
+            f"{proc.stderr[-500:].strip()}"
+        )
+    text = proc.stdout.strip()
+    if not text:
+        raise RuntimeError("FunASR transcription returned empty output")
+    return text
+
+
+def _transcribe_qwen_asr(
     wav_path: str,
     model_name: str = "Qwen/Qwen3-ASR-1.7B",
     device: str = "cuda:0",
+    segment_seconds: float = 120.0,
 ) -> str:
-    """Transcribe a wav file with Qwen3 ASR (lazy-loaded).
+    """Original in-process backend (qwen_asr lib), long audio split into segments.
 
     Loads from the local HuggingFace cache only (no network) — this project
-    runs fully offline once the model is downloaded once. Returns text.
+    runs fully offline once the model is downloaded once. qwen_asr only
+    forwards local_files_only to the model, not to AutoProcessor (which would
+    try a network HEAD and hang), so HF offline is forced via env vars. The
+    120s segments keep peak VRAM flat for long recordings.
     """
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     import numpy as np
     import soundfile as sf
     import torch
@@ -71,5 +154,11 @@ def transcribe_wav(
         max_new_tokens=1024,
         local_files_only=True,
     )
-    result = model.transcribe(audio=(wav, sr))
-    return result[0].text
+
+    seg_len = int(segment_seconds * sr)
+    texts: list[str] = []
+    for start in range(0, len(wav), seg_len):
+        seg = wav[start:start + seg_len]
+        result = model.transcribe(audio=(seg, sr))
+        texts.append(result[0].text)
+    return "\n".join(t for t in texts if t)

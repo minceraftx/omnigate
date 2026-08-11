@@ -55,6 +55,8 @@ omnigate extract-audio "<url>" --out ./tmp/audio
 omnigate extract-audio "<url>" --out ./tmp/audio --no-transcribe
 ```
 
+Transcription backend is chosen automatically: the FunASR env (`D:\whisper\funasr\python.exe`, or set `FUNASR_PYTHON`) when present — Qwen3-ASR + fsmn-vad, no OOM on long videos — otherwise the built-in qwen_asr backend.
+
 Script steps support: `navigate {url}`, `wait {selector}`, `click {selector}`, `input {selector,text,enter?}`, `extract {}`, `scroll {direction?}`. First step must be `navigate`. On replay, a missing element marks the script `STALE` (site changed) — re-record it and update the lesson.
 
 **Write selectors from the real DOM, never guess.** To inspect a page's interactive elements, use the browser layer's `state` action (lists buttons/inputs/links with tag, text, id, class). Interaction uses CSS selectors, not indexes — more stable across site changes.
@@ -127,6 +129,6 @@ Lesson file format (`omnigate/lessons/<site>.md`):
 
 ## Notes
 
-- ASR is fully offline (`local_files_only=True`); Qwen3-ASR-1.7B already cached on this machine.
+- ASR is fully offline (HF cache only); Qwen3-ASR-1.7B already cached on this machine. Backend auto-picks FunASR (when its env exists) over the built-in qwen_asr.
 - Every `open` uses a fresh temp user-data dir and cleans up after itself.
 - Compliance: learning/research only. Respect robots.txt and site rules.
